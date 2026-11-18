@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wake window</title>
+<style>
+:root{
+  --paper:#eef0f6; --panel:#fff; --ink:#1f2540; --muted:#5d6584; --line:#cfd4e4;
+  --dusk:#3b4a8f; --dawn:#f0a47a; --ok:#2f7d6b; --bad:#b3402f; color-scheme:light dark;
+}
+@media (prefers-color-scheme:dark){
+  :root{--paper:#12162a; --panel:#1a1f38; --ink:#e7e9f5; --muted:#9aa2c4; --line:#2b3254;
+        --dusk:#6f7fd6; --ok:#5cc0a6; --bad:#f08a78}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:640px;margin:0 auto;padding:28px 20px 72px}
+h1{font-size:1rem;font-weight:600;margin:0 0 28px;color:var(--muted)}
+h2{font-size:1rem;margin:0 0 12px}
+section{padding:28px 0;border-top:1px solid var(--line)}
+section.first{border-top:0;padding-top:0}
+.muted{color:var(--muted)}
+.when{margin:0;color:var(--muted)}
+.time{font:300 clamp(3.6rem,17vw,5.6rem)/1.05 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+      font-variant-numeric:tabular-nums;margin:4px 0 6px;letter-spacing:-.02em}
+.strip{position:relative;height:14px;margin:30px 0 8px}
+.bar{position:absolute;inset:0;border-radius:7px;background:linear-gradient(90deg,var(--dusk),var(--dawn))}
+.mark{position:absolute;top:-9px;width:3px;height:32px;margin-left:-1.5px;background:var(--ink);border-radius:2px}
+.nowmark{position:absolute;top:-4px;width:10px;height:10px;margin-left:-5px;border-radius:50%;
+         background:var(--paper);border:2px solid var(--ink)}
+.ends{display:flex;justify-content:space-between;font-size:.9rem;color:var(--muted)}
+.status{display:grid;gap:10px;margin:0 0 16px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;background:var(--bad)}
+.dot.on{background:var(--ok)}
+button,.btn{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;
+            padding:8px 14px;cursor:pointer;text-decoration:none;display:inline-block}
+button.primary{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+button:focus-visible,.btn:focus-visible,input:focus-visible{outline:3px solid var(--dusk);outline-offset:2px}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+form{display:grid;gap:14px}
+label{display:grid;gap:4px;font-size:.95rem}
+label small{color:var(--muted)}
+input[type=time],input[type=number]{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);
+            border-radius:8px;padding:8px 10px;width:100%}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.days{display:flex;flex-wrap:wrap;gap:8px;border:0;padding:0;margin:0}
+.days label{display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);
+            border-radius:8px;padding:6px 10px}
+.check{display:flex;align-items:center;gap:8px}
+details summary{cursor:pointer;color:var(--muted);margin-bottom:12px}
+#msg{min-height:1.4em;margin:0}
+#msg.bad{color:var(--bad)}
+ul.log{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:.9rem}
+ul.log li{display:grid;grid-template-columns:5.5rem 1fr;gap:10px}
+ul.log time{color:var(--muted)}
+@media (prefers-reduced-motion:no-preference){.mark{transition:left .6s ease}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Wake window</h1>
+
+  <section class="first" aria-live="polite">
+    <p class="when" id="when">Next alarm</p>
+    <p class="time" id="wake">--:--</p>
+    <p id="reason" class="muted">Loading…</p>
+    <div class="strip" aria-hidden="true"><div class="bar"></div><div class="mark" id="mark"></div><div class="nowmark" id="nowmark" hidden></div></div>
+    <div class="ends"><span id="ws"></span><span id="we"></span></div>
+  </section>
+
+  <section>
+    <h2>Connections</h2>
+    <div class="status">
+      <div class="row"><span><span class="dot" id="gdot"></span>Google Health sleep data</span><span id="gbtn"></span></div>
+      <div class="row"><span><span class="dot" id="adot"></span>Alexa routine (Voice Monkey)</span><span id="abtn"></span></div>
+    </div>
+    <div class="actions">
+      <button id="test">Test the alarm now</button>
+      <a class="btn" href="/api/debug/sleep" target="_blank" rel="noopener">View raw sleep data</a>
+    </div>
+  </section>
+
+  <section>
+    <h2>Settings</h2>
+    <form id="prefs">
+      <div class="pair">
+        <label>Earliest wake time <input type="time" name="earliest" required></label>
+        <label>Latest wake time <small>The alarm always fires by now, even if data is missing.</small>
+          <input type="time" name="latest" required></label>
+      </div>
+      <div class="pair">
+        <label>Target sleep (hours) <input type="number" name="target_hours" min="4" max="12" step="0.25" required></label>
+        <label>Usual bedtime <small>Used until sleep data arrives.</small><input type="time" name="typical_bedtime" required></label>
+      </div>
+      <fieldset class="days" id="days"><legend class="muted" style="margin-bottom:6px">Wake-up days</legend></fieldset>
+      <label class="check"><input type="checkbox" name="adjust_live"> Nudge the alarm using live sleep stages</label>
+      <label class="check"><input type="checkbox" name="enabled"> Smart alarm is on</label>
+      <details>
+        <summary>More</summary>
+        <div class="pair">
+          <label>Start watching at <input type="time" name="monitor_from" required></label>
+          <label>Check every (minutes) <input type="number" name="poll_minutes" min="5" max="30" required></label>
+        </div>
+        <div class="pair" style="margin-top:14px">
+          <label>Sleep cycle (minutes) <input type="number" name="cycle_minutes" min="60" max="130" required></label>
+          <label>Time to fall asleep (minutes) <input type="number" name="sleep_latency_min" min="0" max="60" required></label>
+        </div>
+      </details>
+      <div><button class="primary" type="submit">Save settings</button></div>
+      <p id="msg" role="status"></p>
+    </form>
+  </section>
+
+  <section>
+    <h2>Recent activity</h2>
+    <ul class="log" id="log"></ul>
+  </section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const clock = iso => new Date(iso).toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+let prefsRendered = false;
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) { let m = await r.text(); try { m = JSON.parse(m).detail || m } catch {} throw new Error(m || r.status); }
+  return r.json();
+}
+
+function renderNight(s) {
+  const n = s.night, now = new Date(s.now);
+  if (!n) { $("#wake").textContent = "--:--"; $("#reason").textContent = "The first plan appears once the evening watch starts."; return; }
+  const wake = new Date(n.wake_at), w0 = new Date(n.window_start), w1 = new Date(n.window_end);
+  $("#wake").textContent = clock(n.wake_at);
+  const day = new Date(n.wake_date + "T12:00").toLocaleDateString([], {weekday:"long"});
+  $("#when").textContent = n.fired_at ? (n.fire_ok ? `${day}: alarm sent` : `${day}: alarm failed`) : `${day} morning`;
+  const how = n.confidence === "observed" ? "Based on tonight's sleep data. " : "Estimated from your usual bedtime until sleep data arrives. ";
+  $("#reason").textContent = how + n.reason;
+  $("#ws").textContent = clock(n.window_start); $("#we").textContent = clock(n.window_end);
+  const pct = t => Math.max(0, Math.min(100, (t - w0) / (w1 - w0) * 100)) + "%";
+  $("#mark").style.left = pct(wake);
+  $("#nowmark").hidden = !(now >= w0 && now <= w1); $("#nowmark").style.left = pct(now);
+}
+
+function renderConn(s) {
+  $("#gdot").classList.toggle("on", s.google.connected);
+  $("#adot").classList.toggle("on", s.alexa.configured);
+  $("#gbtn").innerHTML = s.google.connected ? "" : (s.google.configured
+      ? '<a class="btn" href="/auth/login">Connect</a>' : '<span class="muted">Add keys to .env</span>');
+  $("#abtn").innerHTML = s.alexa.configured ? "" : '<span class="muted">Add keys to .env</span>';
+}
+
+function renderPrefs(p) {
+  const f = $("#prefs");
+  for (const el of f.elements) {
+    if (!el.name || el.name === "days") continue;
+    if (el.type === "checkbox") el.checked = !!p[el.name]; else el.value = p[el.name];
+  }
+  $("#days").querySelectorAll("label").forEach(l => l.remove());
+  DAYS.forEach((d, i) => {
+    const l = document.createElement("label");
+    l.innerHTML = `<input type="checkbox" data-day="${i}" ${p.days.includes(i) ? "checked" : ""}> ${d}`;
+    $("#days").append(l);
+  });
+}
+
+function renderLog(events) {
+  $("#log").innerHTML = events.length ? events.map(e =>
+    `<li><time>${new Date(e.ts).toLocaleString([], {month:"short", day:"numeric", hour:"numeric", minute:"2-digit"})}</time><span>${e.msg.replace(/</g, "&lt;")}</span></li>`
+  ).join("") : '<li class="muted">Nothing yet.</li>';
+}
+
+async function load() {
+  const s = await api("/api/status");
+  renderNight(s); renderConn(s); renderLog(s.events);
+  if (!prefsRendered) { renderPrefs(s.prefs); prefsRendered = true; }
+}
+
+$("#prefs").addEventListener("submit", async e => {
+  e.preventDefault();
+  const body = {};
+  for (const el of e.target.elements) {
+    if (!el.name) continue;
+    body[el.name] = el.type === "checkbox" ? el.checked : el.type === "number" ? Number(el.value) : el.value;
+  }
+  body.days = [...document.querySelectorAll("[data-day]")].filter(c => c.checked).map(c => Number(c.dataset.day));
+  const msg = $("#msg"); msg.className = "";
+  try { await api("/api/prefs", {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+        msg.textContent = "Settings saved."; load(); }
+  catch (err) { msg.className = "bad"; msg.textContent = err.message; }
+});
+
+$("#test").addEventListener("click", async () => {
+  if (!confirm("This will trigger your Alexa routine right now. Continue?")) return;
+  const msg = $("#msg"); msg.className = "";
+  try { await api("/api/test-alarm", {method:"POST"}); msg.textContent = "Alexa routine triggered."; load(); }
+  catch (err) { msg.className = "bad"; msg.textContent = err.message; }
+});
+
+load().catch(err => { $("#reason").textContent = err.message; });
+setInterval(() => load().catch(() => {}), 60000);
+</script>
+</body>
+</html>
